@@ -17,6 +17,22 @@ from typing import Dict, Optional
 NODE_0_IP = os.environ.get('NODE_0_IP', 'localhost:8000')
 SERVER_URL = f"http://{NODE_0_IP}/query"
 
+EXTRA_QUERIES = [
+    "Do you offer international shipping?",
+    "How can I contact customer support?",
+    "Where can I find product manuals?",
+    "Are there any discounts for bulk orders?",
+    "What should I do if I received the wrong item?",
+    "How do I track my order?",
+    "Can I cancel my order after it's been placed?",
+    "What are the shipping options available?",
+    "How do I apply a promo code to my order?",
+    "What is your privacy policy?",
+    "How do I create an account?",
+    "What are the terms and conditions of sale?",
+    "How do I reset my password?"
+]
+
 # Test queries
 TEST_QUERIES = [
     "How do I return a defective product?",
@@ -26,7 +42,8 @@ TEST_QUERIES = [
     "Is there a warranty on electronic items?",
     "Can I change my shipping address after placing an order?",
     "What payment methods do you accept?",
-    "How long does shipping typically take?"
+    "How long does shipping typically take?",
+    *EXTRA_QUERIES
 ]
 
 # Shared data structures
@@ -108,11 +125,12 @@ def main():
     Main function: sends requests every 10 seconds for 1 minute
     Requests are sent at fixed intervals regardless of response time
     """
+    queries_to_run = 18
     print("="*70)
     print("ML INFERENCE PIPELINE CLIENT")
     print("="*70)
     print(f"Server URL: {SERVER_URL}")
-    print(f"Sending 6 requests")
+    print(f"Sending {queries_to_run} requests")
     print("="*70)
     
     # Check if server is healthy
@@ -129,7 +147,7 @@ def main():
     threads = []
     
     # Send 6 requests at 10-second intervals
-    for i in range(6):
+    for i in range(queries_to_run):
         # Calculate when this request should be sent
         target_send_time = start_time + (i * 10)
         
@@ -169,12 +187,12 @@ def main():
     print("\n" + "="*70)
     print("SUMMARY")
     print("="*70)
-    print(f"Total requests sent: 6")
+    print(f"Total requests sent: {queries_to_run}")
     
     with results_lock:
         successful = sum(1 for r in results.values() if r.get('success', False))
         print(f"Successful responses: {successful}")
-        print(f"Failed requests: {6 - successful}")
+        print(f"Failed requests: {queries_to_run - successful}")
     
     print(f"Total elapsed time: {total_time:.2f}s")
     
