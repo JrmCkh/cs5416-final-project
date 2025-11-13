@@ -31,6 +31,8 @@ NODE_2_IP = os.environ.get('NODE_2_IP', 'localhost:8002')
 FAISS_INDEX_PATH = os.environ.get('FAISS_INDEX_PATH', 'faiss_index.bin')
 DOCUMENTS_DIR = os.environ.get('DOCUMENTS_DIR', 'documents/')
 
+BATCH_SIZE = 2
+
 # Configuration
 CONFIG = {
     'faiss_index_path': FAISS_INDEX_PATH,
@@ -316,36 +318,48 @@ class MonolithicPipeline:
 
 # Global pipeline instance
 pipeline = None
+shutdown = False
 
 def process_requests_worker():
     """Worker thread that processes requests from the queue"""
     global pipeline
+    global shutdown
     while True:
         try:
-            request_data = request_queue.get()
-            if request_data is None:  # Shutdown signal
-                break
-            
-            # Create request object
-            req = PipelineRequest(
-                request_id=request_data['request_id'],
-                query=request_data['query'],
-                timestamp=time.time()
-            )
-            
-            # Process request
-            response = pipeline.process_request(req)
-            
-            # Store result
-            with results_lock:
-                results[request_data['request_id']] = {
-                    'request_id': response.request_id,
-                    'generated_response': response.generated_response,
-                    'sentiment': response.sentiment,
-                    'is_toxic': response.is_toxic
-                }
-            
-            request_queue.task_done()
+            if request_queue.qsize() == BATCH_SIZE:
+                request_list = []
+                for i in range(BATCH_SIZE):
+                    request_data = request_queue.get()
+                    
+                    if request_data is None:  # Shutdown signal
+                        shutdown = True
+                        break
+                    
+                    # Create request object
+                    req = PipelineRequest(
+                        request_id=request_data['request_id'],
+                        query=request_data['query'],
+                        timestamp=time.time()
+                    )
+
+                    request_list.append(req)
+                
+                if shutdown:
+                    break
+
+                # Process request
+                response = pipeline.process_batch(request_list)
+                
+                # Store result
+                with results_lock:
+                    results[request_data['request_id']] = {
+                        'request_id': response.request_id,
+                        'generated_response': response.generated_response,
+                        'sentiment': response.sentiment,
+                        'is_toxic': response.is_toxic
+                    }
+                
+                request_queue.task_done()
         except Exception as e:
             print(f"Error processing request: {e}")
             request_queue.task_done()
