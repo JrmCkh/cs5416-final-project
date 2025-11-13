@@ -20,13 +20,14 @@ from sentence_transformers import SentenceTransformer
 from flask import Flask, request, jsonify
 from queue import Queue
 import threading
+import requests
 
 # Read environment variables
 TOTAL_NODES = int(os.environ.get('TOTAL_NODES', 1))
 NODE_NUMBER = int(os.environ.get('NODE_NUMBER', 0))
 NODE_0_IP = os.environ.get('NODE_0_IP', 'localhost:8000')
-NODE_1_IP = os.environ.get('NODE_1_IP', 'localhost:8000')
-NODE_2_IP = os.environ.get('NODE_2_IP', 'localhost:8000')
+NODE_1_IP = os.environ.get('NODE_1_IP', 'localhost:8001')
+NODE_2_IP = os.environ.get('NODE_2_IP', 'localhost:8002')
 FAISS_INDEX_PATH = os.environ.get('FAISS_INDEX_PATH', 'faiss_index.bin')
 DOCUMENTS_DIR = os.environ.get('DOCUMENTS_DIR', 'documents/')
 
@@ -47,6 +48,9 @@ app = Flask(__name__)
 request_queue = Queue()
 results = {}
 results_lock = threading.Lock()
+
+query_destination = (NODE_NUMBER + 1) % TOTAL_NODES
+query_destination_lock = threading.Lock()
 
 @dataclass
 class PipelineRequest:
@@ -363,26 +367,61 @@ def handle_query():
             if request_id in results:
                 return jsonify(results[request_id]), 200
         
-        print(f"queueing request {request_id}")
-        # Add to queue
-        request_queue.put({
-            'request_id': request_id,
-            'query': query
-        })
+        # decide if we should dispatch to another node in our round robin fashion
+        global query_destination
+        with query_destination_lock:
+            current_destination = query_destination
+        if NODE_NUMBER == 0 and TOTAL_NODES > 1 and current_destination != NODE_NUMBER:
+            print(">" * 20)
+            print(f"dispatching request {request_id} to node {current_destination}")
+            print(">" * 20)
+            with query_destination_lock:
+                query_destination = (query_destination + 1) % TOTAL_NODES
 
-        # Wait for processing (with timeout). Very inefficient - would suggest using a more efficient waiting and timeout mechanism.
-        timeout = 300  # 5 minutes
-        start_wait = time.time()
-        while True:
-            with results_lock:
-                if request_id in results:
-                    result = results.pop(request_id)
-                    return jsonify(result), 200
-            
-            if time.time() - start_wait > timeout:
-                return jsonify({'error': 'Request timeout'}), 504
-            
-            time.sleep(0.1)
+            # Dispatch to another node
+            if current_destination == 1:
+                SERVER_URL = f"http://{NODE_1_IP}/query"
+            elif current_destination == 2:
+                SERVER_URL = f"http://{NODE_2_IP}/query"
+            response = requests.post(SERVER_URL, json={
+                'request_id': request_id,
+                'query': query
+            }, timeout=300)
+
+            # extract the result from the response and put it into our local results store
+            if response.status_code == 200:
+                result = response.json()
+                with results_lock:
+                    results[request_id] = result
+                return jsonify(result), 200
+            else:
+                # return the same error message and package we received from the other node
+                return jsonify(response.json()), response.status_code
+        else:
+            print(">" * 20)
+            print(f"queueing request on this node ({NODE_NUMBER}){request_id}")
+            print(">" * 20)
+            with query_destination_lock:
+                query_destination = (query_destination + 1) % TOTAL_NODES
+            # Add to queue
+            request_queue.put({
+                'request_id': request_id,
+                'query': query
+            })
+
+            # Wait for processing (with timeout). Very inefficient - would suggest using a more efficient waiting and timeout mechanism.
+            timeout = 300  # 5 minutes
+            start_wait = time.time()
+            while True:
+                with results_lock:
+                    if request_id in results:
+                        result = results.pop(request_id)
+                        return jsonify(result), 200
+                
+                if time.time() - start_wait > timeout:
+                    return jsonify({'error': 'Request timeout'}), 504
+                
+                time.sleep(0.1)
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -424,8 +463,15 @@ def main():
     
     # Start Flask server
     print(f"\nStarting Flask server")
-    hostname = NODE_0_IP.split(':')[0]
-    port = int(NODE_0_IP.split(':')[1]) if ':' in NODE_0_IP else 8000
+    if NODE_NUMBER == 0:
+        hostname = NODE_0_IP.split(':')[0]
+        port = int(NODE_0_IP.split(':')[1]) if ':' in NODE_0_IP else 8000
+    elif NODE_NUMBER == 1:
+        hostname = NODE_1_IP.split(':')[0]
+        port = int(NODE_1_IP.split(':')[1]) if ':' in NODE_1_IP else 8001
+    elif NODE_NUMBER == 2:
+        hostname = NODE_2_IP.split(':')[0]
+        port = int(NODE_2_IP.split(':')[1]) if ':' in NODE_2_IP else 8002
     app.run(host=hostname, port=port, threaded=True)
 
 
