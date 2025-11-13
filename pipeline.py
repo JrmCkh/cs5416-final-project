@@ -348,18 +348,21 @@ def process_requests_worker():
                     break
 
                 # Process request
-                response = pipeline.process_batch(request_list)
-                
-                # Store result
+                response_list = pipeline.process_batch(request_list)
+
+                # Store results for each request in the batch
                 with results_lock:
-                    results[request_data['request_id']] = {
-                        'request_id': response.request_id,
-                        'generated_response': response.generated_response,
-                        'sentiment': response.sentiment,
-                        'is_toxic': response.is_toxic
-                    }
-                
-                request_queue.task_done()
+                    for response in response_list:
+                        results[response.request_id] = {
+                            'request_id': response.request_id,
+                            'generated_response': response.generated_response,
+                            'sentiment': response.sentiment,
+                            'is_toxic': response.is_toxic
+                        }
+
+                # Mark all requests as done
+                for _ in range(len(request_list)):
+                    request_queue.task_done()
         except Exception as e:
             print(f"Error processing request: {e}")
             request_queue.task_done()
