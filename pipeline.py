@@ -21,6 +21,8 @@ from flask import Flask, request, jsonify
 from queue import Queue
 import threading
 import requests
+# Uncomment to print profiling info (rmb to pip install)
+# import memory_profiler
 
 # Read environment variables
 TOTAL_NODES = int(os.environ.get('TOTAL_NODES', 1))
@@ -96,6 +98,8 @@ class MonolithicPipeline:
         responses = self.process_batch([request])
         return responses[0]
 
+    # Uncomment to print profiling info (add this line to other methods too)
+    # @memory_profiler.profile
     def process_batch(self, requests: List[PipelineRequest]) -> List[PipelineResponse]:
         """
         Main pipeline execution for a batch of requests.
