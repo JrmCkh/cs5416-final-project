@@ -34,7 +34,7 @@ FAISS_INDEX_PATH = os.environ.get('FAISS_INDEX_PATH', 'faiss_index.bin')
 DOCUMENTS_DIR = os.environ.get('DOCUMENTS_DIR', 'documents/')
 
 BATCH_SIZE = 2
-BATCH_TIMEOUT = 60.0 # 1min
+BATCH_TIMEOUT = 600.0 # 1min
 
 # Configuration
 CONFIG = {
@@ -342,7 +342,8 @@ def process_requests_worker():
             timeout_elapsed = batch_start_time is not None and (time.time() - batch_start_time) >= BATCH_TIMEOUT
             if request_queue.qsize() >= BATCH_SIZE or (request_queue.qsize() > 0 and timeout_elapsed):
                 request_list = []
-                batch_size = request_queue.qsize()
+                # batch_size = request_queue.qsize()
+                batch_size = min(request_queue.qsize(), BATCH_SIZE)
                 for i in range(batch_size):
                     request_data = request_queue.get()
                     
