@@ -34,6 +34,8 @@ FAISS_INDEX_PATH = os.environ.get('FAISS_INDEX_PATH', 'faiss_index.bin')
 DOCUMENTS_DIR = os.environ.get('DOCUMENTS_DIR', 'documents/')
 
 BATCH_SIZE = 2
+# 5 seconds. If test with 1 node, every batch should have 1 request when processing
+BATCH_TIMEOUT = 5.0 
 
 # Configuration
 CONFIG = {
@@ -328,11 +330,21 @@ def process_requests_worker():
     """Worker thread that processes requests from the queue"""
     global pipeline
     global shutdown
+
+    batch_start_time = None
+
     while True:
         try:
-            if request_queue.qsize() == BATCH_SIZE:
+            # Start tracking time when first request arrives and time hasnt start
+            if request_queue.qsize() > 0 and batch_start_time is None:
+                batch_start_time = time.time()
+
+            # Process batch when its full OR timeout
+            timeout_elapsed = batch_start_time is not None and (time.time() - batch_start_time) >= BATCH_TIMEOUT
+            if request_queue.qsize() == BATCH_SIZE or (request_queue.qsize() > 0 and timeout_elapsed):
                 request_list = []
-                for i in range(BATCH_SIZE):
+                batch_size = request_queue.qsize()
+                for i in range(batch_size):
                     request_data = request_queue.get()
                     
                     if request_data is None:  # Shutdown signal
@@ -367,6 +379,12 @@ def process_requests_worker():
                 # Mark all requests as done
                 for _ in range(len(request_list)):
                     request_queue.task_done()
+
+                batch_start_time = None
+
+            else:
+                # Avoid CPU consumption
+                time.sleep(0.1)
         except Exception as e:
             print(f"Error processing request: {e}")
             request_queue.task_done()
