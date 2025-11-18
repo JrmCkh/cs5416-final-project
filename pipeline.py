@@ -34,8 +34,7 @@ FAISS_INDEX_PATH = os.environ.get('FAISS_INDEX_PATH', 'faiss_index.bin')
 DOCUMENTS_DIR = os.environ.get('DOCUMENTS_DIR', 'documents/')
 
 BATCH_SIZE = 2
-# 5 seconds. If test with 1 node, every batch should have 1 request when processing
-BATCH_TIMEOUT = 5.0 
+BATCH_TIMEOUT = 60.0 # 1min
 
 # Configuration
 CONFIG = {
@@ -109,7 +108,7 @@ class MonolithicPipeline:
         if not requests:
             return []
 
-        batch_size = len(requests)
+        batch_size = min(len(requests), BATCH_SIZE)
         start_times = [time.time() for _ in requests]
         queries = [req.query for req in requests]
 
@@ -341,7 +340,7 @@ def process_requests_worker():
 
             # Process batch when its full OR timeout
             timeout_elapsed = batch_start_time is not None and (time.time() - batch_start_time) >= BATCH_TIMEOUT
-            if request_queue.qsize() == BATCH_SIZE or (request_queue.qsize() > 0 and timeout_elapsed):
+            if request_queue.qsize() >= BATCH_SIZE or (request_queue.qsize() > 0 and timeout_elapsed):
                 request_list = []
                 batch_size = request_queue.qsize()
                 for i in range(batch_size):
