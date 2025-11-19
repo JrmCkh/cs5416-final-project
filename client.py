@@ -196,6 +196,11 @@ def main():
     
     print(f"Total elapsed time: {total_time:.2f}s")
     
+    # Maximum throughput in requests/minute that your system can handle
+    throughput_rps = successful / total_time
+    throughput_rpm = throughput_rps * 60
+    print(f"Maximum throughput (requests/minute): {throughput_rpm:.2f}request/minute")
+    
     with results_lock:
         if results:
             print("\nResults:")

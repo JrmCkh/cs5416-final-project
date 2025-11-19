@@ -22,7 +22,7 @@ from queue import Queue
 import threading
 import requests
 # Uncomment to print profiling info (rmb to pip install)
-# import memory_profiler
+import memory_profiler
 
 # Read environment variables
 TOTAL_NODES = int(os.environ.get('TOTAL_NODES', 1))
@@ -107,7 +107,7 @@ class MonolithicPipeline:
         return responses[0]
 
     # Uncomment to print profiling info (add this line to other methods too)
-    # @memory_profiler.profile
+    @memory_profiler.profile
     def process_batch(self, requests: List[PipelineRequest]) -> List[PipelineResponse]:
         """
         Main pipeline execution for a batch of requests.
@@ -174,6 +174,7 @@ class MonolithicPipeline:
         
         return responses
     
+    @memory_profiler.profile
     def _generate_embeddings_batch(self, texts: List[str]) -> np.ndarray:
         """Step 2: Generate embeddings for a batch of queries"""
         model = SentenceTransformer(self.embedding_model_name).to(self.device)
@@ -185,14 +186,16 @@ class MonolithicPipeline:
         del model
         gc.collect()
         return embeddings
-    
+
+    @memory_profiler.profile
     def _faiss_search_batch(self, query_embeddings: np.ndarray) -> List[List[int]]:
         """Step 3: Perform FAISS ANN search for a batch of embeddings"""
         query_embeddings = query_embeddings.astype('float32')
         _, indices = self.faiss_index.search(query_embeddings, CONFIG['retrieval_k'])
 
         return [row.tolist() for row in indices]
-    
+
+    @memory_profiler.profile
     def _fetch_documents_batch(self, doc_id_batches: List[List[int]]) -> List[List[Dict]]:
         """Step 4: Fetch documents for each query in the batch using SQLite"""
         db_path = f"{CONFIG['documents_path']}/documents.db"
@@ -217,7 +220,8 @@ class MonolithicPipeline:
             documents_batch.append(documents)
         conn.close()
         return documents_batch
-    
+
+    @memory_profiler.profile
     def _rerank_documents_batch(self, queries: List[str], documents_batch: List[List[Dict]]) -> List[List[Dict]]:
         """Step 5: Rerank retrieved documents for each query in the batch"""
         tokenizer = AutoTokenizer.from_pretrained(self.reranker_model_name)
@@ -244,7 +248,8 @@ class MonolithicPipeline:
         del model, tokenizer
         gc.collect()
         return reranked_batches
-    
+
+    @memory_profiler.profile
     def _generate_responses_batch(self, queries: List[str], documents_batch: List[List[Dict]]) -> List[str]:
         """Step 6: Generate LLM responses for each query in the batch"""
         model = AutoModelForCausalLM.from_pretrained(
@@ -281,7 +286,8 @@ class MonolithicPipeline:
         del model, tokenizer
         gc.collect()
         return responses
-    
+
+    @memory_profiler.profile
     def _analyze_sentiment_batch(self, texts: List[str]) -> List[str]:
         """Step 7: Analyze sentiment for each generated response"""
         classifier = hf_pipeline(
@@ -304,7 +310,8 @@ class MonolithicPipeline:
         del classifier
         gc.collect()
         return sentiments
-    
+
+    @memory_profiler.profile
     def _filter_response_safety_batch(self, texts: List[str]) -> List[bool]:
         """Step 8: Filter responses for safety for each entry in the batch"""
         classifier = hf_pipeline(
