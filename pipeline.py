@@ -90,6 +90,13 @@ class MonolithicPipeline:
         self.llm_model_name = 'Qwen/Qwen2.5-0.5B-Instruct'
         self.sentiment_model_name = 'nlptown/bert-base-multilingual-uncased-sentiment'
         self.safety_model_name = 'unitary/toxic-bert'
+        
+        # Load FAISS Index during initialization
+        # IO_FLAG_MMAP flag used for memory-mapping an index from disk. 
+        # This enables the library to load an index without fully loading it into RAM
+        if not os.path.exists(CONFIG['faiss_index_path']):
+            raise FileNotFoundError("FAISS index not found. Please create the index before running.")
+        self.faiss_index = faiss.read_index(CONFIG['faiss_index_path'], faiss.IO_FLAG_MMAP)
     
     def process_request(self, request: PipelineRequest) -> PipelineResponse:
         """
@@ -181,15 +188,9 @@ class MonolithicPipeline:
     
     def _faiss_search_batch(self, query_embeddings: np.ndarray) -> List[List[int]]:
         """Step 3: Perform FAISS ANN search for a batch of embeddings"""
-        if not os.path.exists(CONFIG['faiss_index_path']):
-            raise FileNotFoundError("FAISS index not found. Please create the index before running the pipeline.")
-        
-        print("Loading FAISS index")
-        index = faiss.read_index(CONFIG['faiss_index_path'])
         query_embeddings = query_embeddings.astype('float32')
-        _, indices = index.search(query_embeddings, CONFIG['retrieval_k'])
-        del index
-        gc.collect()
+        _, indices = self.faiss_index.search(query_embeddings, CONFIG['retrieval_k'])
+
         return [row.tolist() for row in indices]
     
     def _fetch_documents_batch(self, doc_id_batches: List[List[int]]) -> List[List[Dict]]:
